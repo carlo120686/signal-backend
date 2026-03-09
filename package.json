@@ -1,8 +1,5 @@
 {
   "name": "signal-backend",
   "version": "1.0.0",
-  "type": "module",
-  "dependencies": {
-    "yahoo-finance2": "^2.11.3"
-  }
+  "type": "module"
 }
