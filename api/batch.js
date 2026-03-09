@@ -1,4 +1,6 @@
-import yahooFinance from 'yahoo-finance2'
+import yf from 'yahoo-finance2'
+
+const yahooFinance = yf.default ?? yf
 
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') {
@@ -13,12 +15,13 @@ export default async function handler(req, res) {
   if (!symbols) return res.status(400).json({ error: 'symbols required' })
 
   const list = symbols.split(',').map(s => s.trim()).filter(Boolean).slice(0, 20)
-
   const results = await Promise.allSettled(list.map(fetchOne))
 
   const data = {}
   results.forEach((r, i) => {
-    data[list[i]] = r.status === 'fulfilled' ? r.value : { ok: false, symbol: list[i], error: r.reason?.message }
+    data[list[i]] = r.status === 'fulfilled'
+      ? r.value
+      : { ok: false, symbol: list[i], error: r.reason?.message }
   })
 
   return res.status(200).json(data)
@@ -39,7 +42,6 @@ async function fetchOne(symbol) {
   const current = quote.regularMarketPrice
   const trendUp = sma20 ? current > sma20 : null
   const goldenCross = sma20 && sma50 ? sma20 > sma50 : null
-  const bb = calcBB(closes)
 
   return {
     symbol, ok: true,
@@ -48,7 +50,8 @@ async function fetchOne(symbol) {
     sma20, sma50,
     rsi: calcRSI(closes),
     macd: calcMACD(closes),
-    bb, trendUp, goldenCross,
+    bb: calcBB(closes),
+    trendUp, goldenCross,
     sparkline: closes.slice(-30).map((v, i) => ({ i, v })),
     high52: quote.fiftyTwoWeekHigh,
     low52: quote.fiftyTwoWeekLow,
