@@ -1,13 +1,9 @@
-import yf from 'yahoo-finance2'
-
-const yahooFinance = yf.default ?? yf
-
+// Nessuna dipendenza esterna — chiama Yahoo Finance direttamente
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', '*')
     return res.status(200).end()
   }
-
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600')
 
@@ -28,35 +24,42 @@ export default async function handler(req, res) {
 }
 
 async function fetchOne(symbol) {
-  const period1 = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-  const period2 = new Date().toISOString().split('T')[0]
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=3mo`
+  const res = await fetch(url, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      'Accept': 'application/json',
+    }
+  })
+  if (!res.ok) throw new Error(`Yahoo HTTP ${res.status}`)
+  const data = await res.json()
+  const result = data?.chart?.result?.[0]
+  if (!result) throw new Error('No data from Yahoo')
 
-  const [quote, historical] = await Promise.all([
-    yahooFinance.quote(symbol),
-    yahooFinance.historical(symbol, { period1, period2, interval: '1d' })
-  ])
+  const meta = result.meta
+  const closes = result.indicators.quote[0].close.filter(Boolean)
+  const current = meta.regularMarketPrice
+  const prev = meta.chartPreviousClose
+  const change = ((current - prev) / prev) * 100
 
-  const closes = historical.map(d => d.close).filter(Boolean)
   const sma20 = closes.length >= 20 ? avg(closes.slice(-20)) : null
   const sma50 = closes.length >= 50 ? avg(closes.slice(-50)) : null
-  const current = quote.regularMarketPrice
   const trendUp = sma20 ? current > sma20 : null
   const goldenCross = sma20 && sma50 ? sma20 > sma50 : null
 
   return {
     symbol, ok: true,
-    current,
-    change: quote.regularMarketChangePercent,
+    current, change,
     sma20, sma50,
     rsi: calcRSI(closes),
     macd: calcMACD(closes),
     bb: calcBB(closes),
     trendUp, goldenCross,
     sparkline: closes.slice(-30).map((v, i) => ({ i, v })),
-    high52: quote.fiftyTwoWeekHigh,
-    low52: quote.fiftyTwoWeekLow,
-    currency: quote.currency,
-    name: quote.longName || quote.shortName,
+    high52: meta.fiftyTwoWeekHigh,
+    low52: meta.fiftyTwoWeekLow,
+    currency: meta.currency,
+    name: meta.longName || meta.shortName || symbol,
   }
 }
 
@@ -92,6 +95,6 @@ function calcBB(closes, period = 20) {
   const std = Math.sqrt(slice.reduce((s, v) => s + (v - mean) ** 2, 0) / period)
   const upper = mean + 2 * std
   const lower = mean - 2 * std
-  const current = closes[closes.length - 1]
-  return { upper, lower, mean, pct: Math.round(((current - lower) / (upper - lower)) * 100) }
+  const cur = closes[closes.length - 1]
+  return { upper, lower, mean, pct: Math.round(((cur - lower) / (upper - lower)) * 100) }
 }
